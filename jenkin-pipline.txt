@@ -1,0 +1,181 @@
+pipeline {
+
+    agent any
+
+    environment {
+
+        MAVEN = "C:\\Rayssoftware\\DevOp\\apache-maven-3.10.0\\bin\\mvn.cmd"
+
+        PROJECT_DIR = "ORSProject-04"
+
+        DOCKER = "C:\\Users\\AMEEN\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe"
+
+        DOCKER_CONFIG = "C:\\Users\\AMEEN\\.docker"
+
+        APP_URL = "http://localhost:8080/ORSProject-04"
+
+    }
+
+    stages {
+
+        // 1. Checkout Source Code
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/HemaSingh18/ORSProject04_bootstrap.git'
+            }
+        }
+
+
+        // 2. Check Tools
+
+        stage('Check Tools') {
+            steps {
+                bat '''
+                    echo ===== JAVA VERSION =====
+                    java -version
+
+                    echo ===== MAVEN VERSION =====
+                    "%MAVEN%" --version
+
+                    echo ===== DOCKER VERSION =====
+                    "%DOCKER%" --version
+
+                    echo ===== DOCKER COMPOSE VERSION =====
+                    "%DOCKER%" compose version
+                '''
+            }
+        }
+
+
+        // 3. Build WAR
+
+        stage('Build WAR') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    bat '''
+                        echo ===== CLEAN TARGET =====
+
+                        if exist target rmdir /s /q target
+
+                        echo ===== BUILD WAR =====
+
+                        "%MAVEN%" clean package
+
+                        if errorlevel 1 exit /b 1
+
+                        if not exist target\\ORSProject-04.war (
+                            echo WAR FILE NOT FOUND!
+                            exit /b 1
+                        )
+
+                        echo WAR FILE GENERATED SUCCESSFULLY!
+                    '''
+                }
+            }
+        }
+
+
+        // 4. Stop Old Containers
+
+        stage('Stop Old Containers') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    bat '''
+                        echo ===== STOP OLD CONTAINERS =====
+
+                        "%DOCKER%" compose down
+
+                        if errorlevel 1 exit /b 1
+                    '''
+                }
+            }
+        }
+
+
+        // 5. Build and Deploy
+
+        stage('Build and Deploy') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    bat '''
+                        echo ===== BUILD DOCKER IMAGES =====
+
+                        "%DOCKER%" compose build --no-cache
+
+                        if errorlevel 1 exit /b 1
+
+                        echo ===== START CONTAINERS =====
+
+                        "%DOCKER%" compose up -d
+
+                        if errorlevel 1 exit /b 1
+
+                        echo APPLICATION DEPLOYED SUCCESSFULLY!
+                    '''
+                }
+            }
+        }
+
+
+        // 6. Verify Deployment
+
+        stage('Verify Deployment') {
+            steps {
+
+                sleep time: 20, unit: 'SECONDS'
+
+                bat '''
+                    echo ===== RUNNING CONTAINERS =====
+
+                    "%DOCKER%" ps
+
+                    echo ===== MYSQL DATABASE LOGS =====
+
+                    "%DOCKER%" logs ors-mysql --tail 20
+
+                    echo ===== WEB APPLICATION LOGS =====
+
+                    "%DOCKER%" logs ors-webapp --tail 30
+
+                    echo ===== VERIFY CONTAINER STATUS =====
+
+                    "%DOCKER%" inspect -f "{{.State.Status}}" ors-mysql
+
+                    if errorlevel 1 exit /b 1
+
+                    "%DOCKER%" inspect -f "{{.State.Status}}" ors-webapp
+
+                    if errorlevel 1 exit /b 1
+                '''
+
+                echo "Application URL: ${APP_URL}"
+            }
+        }
+
+    }
+
+
+    // POST BUILD ACTIONS
+
+    post {
+
+        success {
+            echo '======================================'
+            echo 'CI/CD PIPELINE SUCCESSFUL!'
+            echo '======================================'
+
+            echo "ORS Application: ${APP_URL}"
+        }
+
+        failure {
+            echo '======================================'
+            echo 'CI/CD PIPELINE FAILED!'
+            echo 'Check Jenkins Console Output.'
+            echo '======================================'
+        }
+
+    }
+
+}
